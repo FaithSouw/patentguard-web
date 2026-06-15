@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "patentguard-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173"],
+      "port": 5173
+    },
+    {
       "name": "EigoMaster",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["serve", "-l", "5500", "/Users/faith/Documents/EigoMaster"],

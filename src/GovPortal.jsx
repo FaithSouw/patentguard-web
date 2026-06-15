@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { GrantedPatentEditor } from "./GrantedPatentEditor";
+import { store } from "./lib/store";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  PATENTGUARD — GOVERNMENT PORTAL v1
@@ -140,23 +141,9 @@ function calcPublicationDate(filingTs, months) {
   const d=new Date(filingTs); d.setMonth(d.getMonth()+months); return d.getTime();
 }
 
-// ── Unified storage adapter (localStorage fallback for StackBlitz) ───────────
-// GovPortal and PatentGuard share the same localStorage origin via Shell.jsx
-const store = {
-  async get(key, shared=false) {
-    try { if (window.storage) return window.storage.get(key, shared); } catch {}
-    const v = localStorage.getItem(key);
-    return v ? { value: v } : null;
-  },
-  async set(key, value, shared=false) {
-    try { if (window.storage) return window.storage.set(key, value, shared); } catch {}
-    localStorage.setItem(key, value);
-  },
-  async delete(key, shared=false) {
-    try { if (window.storage) return window.storage.delete(key, shared); } catch {}
-    localStorage.removeItem(key);
-  },
-};
+// ── Unified storage adapter ──────────────────────────────────────────────────
+// Imported from ./lib/store (Supabase when VITE_SUPABASE_* are set, else localStorage).
+// Shared namespaces (pending:*, ledger:*, etc.) sync across the User and Gov portals.
 
 // ── Automated formality checker ───────────────────────────────────────────────
 function runFormalityCheck(tokenData, rawText) {

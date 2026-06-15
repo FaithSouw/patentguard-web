@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import App from "./App";
 import GovPortal from "./GovPortal";
+import { store } from "./lib/store";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  PATENTGUARD — NAVIGATION SHELL
@@ -12,7 +13,7 @@ const GOV_PIN = "1234"; // Change this to your preferred demo PIN
 // ── Shared storage helpers ────────────────────────────────────────────────────
 async function getNotifications() {
   try {
-    const r = await window.storage.get("notifications:index", true).catch(() => null);
+    const r = await store.get("notifications:index", true).catch(() => null);
     if (!r) return [];
     return JSON.parse(r.value).slice(0, 20);
   } catch { return []; }
@@ -20,19 +21,19 @@ async function getNotifications() {
 
 async function addNotification(msg, type, portal) {
   try {
-    const r = await window.storage.get("notifications:index", true).catch(() => null);
+    const r = await store.get("notifications:index", true).catch(() => null);
     const existing = r ? JSON.parse(r.value) : [];
     const entry = { id: Date.now(), msg, type, portal, timestamp: Date.now(), read: false };
-    await window.storage.set("notifications:index", JSON.stringify([entry, ...existing].slice(0, 50)), true);
+    await store.set("notifications:index", JSON.stringify([entry, ...existing].slice(0, 50)), true);
   } catch {}
 }
 
 async function markAllRead(portal) {
   try {
-    const r = await window.storage.get("notifications:index", true).catch(() => null);
+    const r = await store.get("notifications:index", true).catch(() => null);
     if (!r) return;
     const updated = JSON.parse(r.value).map(n => n.portal === portal ? { ...n, read: true } : n);
-    await window.storage.set("notifications:index", JSON.stringify(updated), true);
+    await store.set("notifications:index", JSON.stringify(updated), true);
   } catch {}
 }
 

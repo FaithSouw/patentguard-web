@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { TemplatePanel, ApplicationEditorView } from './PatentTemplate';
+import { store } from './lib/store';
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  PATENTGUARD v4 — Global Ledger · ZK Proofs · IPFS · AI Chatbot · Laws
@@ -392,28 +393,7 @@ async function checkAndReleaseDuePatents(onRelease) {
 }
 
 // ── Unified storage adapter ──────────────────────────────────────────────────
-// Uses window.storage (Claude artifact) with localStorage fallback (StackBlitz)
-const store = {
-  async get(key, shared=false) {
-    try {
-      if (window.storage) return window.storage.get(key, shared);
-    } catch {}
-    const v = localStorage.getItem(key);
-    return v ? { value: v } : null;
-  },
-  async set(key, value, shared=false) {
-    try {
-      if (window.storage) return window.storage.set(key, value, shared);
-    } catch {}
-    localStorage.setItem(key, value);
-  },
-  async delete(key, shared=false) {
-    try {
-      if (window.storage) return window.storage.delete(key, shared);
-    } catch {}
-    localStorage.removeItem(key);
-  },
-};
+// Imported from ./lib/store (Supabase when VITE_SUPABASE_* are set, else localStorage).
 
 // ── Submit to government pending queue ───────────────────────────────────────
 // Writes to shared pending:* storage so GovPortal can read it immediately
