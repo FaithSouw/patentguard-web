@@ -5,7 +5,7 @@ import { TemplatePanel, ApplicationEditorView } from './PatentTemplate';
 //  PATENTGUARD v4 — Global Ledger · ZK Proofs · IPFS · AI Chatbot · Laws
 // ══════════════════════════════════════════════════════════════════════════════
 
-const API_BASE = "https://green-guests-mix.loca.lt";
+const API_BASE = import.meta.env.VITE_API_BASE || "https://green-guests-mix.loca.lt";
 const FETCH_HEADERS = { "bypass-tunnel-reminder": "true", "Content-Type": "application/json" };
 const FORM_HEADERS  = { "bypass-tunnel-reminder": "true" };
 
@@ -472,9 +472,11 @@ async function searchUSPTO(query,perPage=30) {
   }
 }
 async function callClaude(messages,system) {
-  const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1500,system,messages})});
+  // Calls the backend proxy (/claude) so the Anthropic API key stays server-side.
+  const resp=await fetch(`${API_BASE}/claude`,{method:"POST",headers:FETCH_HEADERS,body:JSON.stringify({system,messages})});
+  if(!resp.ok) return "";
   const d=await resp.json();
-  return d.content?.find(b=>b.type==="text")?.text||"";
+  return d.text||d.content?.find(b=>b.type==="text")?.text||"";
 }
 async function analyzePatent(text,results,jurisdiction="US") {
   const laws=JURISDICTIONS[jurisdiction]?.laws.slice(0,3).map(l=>`${l.section}: ${l.summary}`).join("\n")||"";
