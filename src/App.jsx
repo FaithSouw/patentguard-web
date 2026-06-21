@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { TemplatePanel, ApplicationEditorView } from './PatentTemplate';
 import { store } from './lib/store';
+import { extractFileText } from './lib/extractText';
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  PATENTGUARD v4 — Global Ledger · ZK Proofs · IPFS · AI Chatbot · Laws
@@ -438,6 +439,36 @@ async function vaultDelete(id) {
   } catch {}
 }
 
+// Read all pending (government-queue) applications so the user app can show
+// each vault item's live status (submitted / withdrawable / on-ledger).
+async function pendingGetAll() {
+  try {
+    const idx=await store.get("pending:index",true).catch(()=>null);
+    if(!idx) return [];
+    const ids=JSON.parse(idx.value);
+    const apps=await Promise.all(ids.map(id=>store.get(`pending:${id}`,true).then(r=>r?JSON.parse(r.value):null).catch(()=>null)));
+    return apps.filter(Boolean);
+  } catch { return []; }
+}
+
+// Withdraw a not-yet-granted submission from the government queue (the safe
+// "unwind" before grant). Removes it from the pending queue and marks the vault
+// copy WITHDRAWN. NOT allowed once the patent is on the immutable ledger.
+async function withdrawSubmission(id) {
+  try {
+    await store.delete(`pending:${id}`,true);
+    const idx=await store.get("pending:index",true).catch(()=>null);
+    if(idx){
+      const index=JSON.parse(idx.value).filter(i=>i!==id);
+      await store.set("pending:index",JSON.stringify(index),true);
+    }
+    // mark the vault copy as withdrawn (keep the file; it's just out of the queue)
+    const v=await store.get(`vault:${id}`).catch(()=>null);
+    if(v){ const doc=JSON.parse(v.value); doc.status="WITHDRAWN"; await store.set(`vault:${id}`,JSON.stringify(doc)); }
+    return true;
+  } catch(e){ console.error("withdrawSubmission error:",e); return false; }
+}
+
 // ── USPTO + Claude ────────────────────────────────────────────────────────────
 async function searchUSPTO(query,perPage=30) {
   try {
@@ -589,12 +620,11 @@ function UploadPanel(){
     if (!file || !userKey) return;
     setStatus("processing"); setMsg("Generating ZK commitment...");
     try {
-      const rawText = await new Promise((res,rej)=>{
-        const r=new FileReader();
-        r.onload=e=>res(e.target.result);
-        r.onerror=()=>rej(new Error("Read error"));
-        r.readAsText(file);
-      });
+      // Extract real text (pdf.js for PDFs; direct read for text files).
+      const rawText = await extractFileText(file);
+      if (!rawText || rawText.trim().length < 20) {
+        throw new Error("Could not extract text from this file. For scanned/image PDFs, paste the text via the template editor instead.");
+      }
 
       const salt      = Array.from(crypto.getRandomValues(new Uint8Array(16))).join("");
       const zk        = await zkCommit(rawText, salt);
@@ -969,6 +999,7 @@ export default function PatentGuard(){
   const [ledger,setLedger]=useState([]);
   const [vault,setVault]=useState([]);
   const [pendingVault,setPendingVault]=useState([]);
+  const [pending,setPending]=useState([]);
   const [editorData,   setEditorData]   = useState(null);  // template export
   const [appView,      setAppView]      = useState('template'); // 'template'|'editor'
   const [releasedCount,setReleasedCount]=useState(0);
@@ -985,6 +1016,7 @@ export default function PatentGuard(){
     });
     vaultGetAll().then(setVault);
     pendingVaultGetAll().then(setPendingVault);
+    pendingGetAll().then(setPending);
     checkAndReleaseDuePatents(released=>{
       if(released.length>0){
         setReleasedCount(released.length);
@@ -1225,26 +1257,41 @@ export default function PatentGuard(){
             {tab==="vault"&&(
               <div style={{flex:1,overflowY:"auto",padding:20}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                  <div><div style={{fontFamily:"monospace",fontSize:15,fontWeight:700,marginBottom:2}}>Personal Vault</div><div style={{fontSize:10,color:C.muted}}>Your uploaded documents — private to this device</div></div>
+                  <div><div style={{fontFamily:"monospace",fontSize:15,fontWeight:700,marginBottom:2}}>Personal Vault</div><div style={{fontSize:10,color:C.muted}}>Your documents — stored in your PatentGuard account · ledger-bound items are locked</div></div>
                   <Pill color={C.green}>{vault.length} DOCS</Pill>
                 </div>
                 {vault.length===0?(
                   <div style={{textAlign:"center",padding:"40px",color:C.muted}}><div style={{fontSize:36,marginBottom:12}}>🗄</div><div style={{fontSize:11,lineHeight:1.8}}>No documents yet.<br/>Upload via the Upload tab.</div></div>
-                ):vault.map(doc=>(
+                ):vault.map(doc=>{
+                  const onLedger = ledger.some(e=>e.id===doc.id);
+                  const pend     = pending.find(p=>p.id===doc.id);
+                  const granted  = onLedger || ["GRANTED","CODE_ISSUED"].includes(pend?.status);
+                  const inQueue  = pend && !granted && pend.status!=="REJECTED" && doc.status!=="WITHDRAWN";
+                  return (
                   <div key={doc.id} style={{marginBottom:8,padding:"12px 14px",background:C.panel,border:`1px solid ${C.border}`,borderRadius:10}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
                       <span style={{fontSize:10,color:C.cyan,fontFamily:"monospace",fontWeight:700}}>{doc.id}</span>
-                      <button onClick={async()=>{await vaultDelete(doc.id);setVault(prev=>prev.filter(d=>d.id!==doc.id));}} style={{background:"transparent",border:"none",color:C.muted,cursor:"pointer",fontSize:13}}>✕</button>
+                      {onLedger ? (
+                        <span title="Published to the global ledger — immutable" style={{fontSize:9,color:C.gold,fontFamily:"monospace",fontWeight:700,letterSpacing:"0.06em"}}>🔒 ON LEDGER</span>
+                      ) : inQueue ? (
+                        <button title="Withdraw this submission from the government queue" onClick={async()=>{ if(!window.confirm("Withdraw this submission from the government queue? You can re-submit later.")) return; await withdrawSubmission(doc.id); setPending(prev=>prev.filter(p=>p.id!==doc.id)); setVault(prev=>prev.map(d=>d.id===doc.id?{...d,status:"WITHDRAWN"}:d)); }} style={{background:"transparent",border:`1px solid ${C.amber}50`,color:C.amber,cursor:"pointer",fontSize:9,fontFamily:"monospace",fontWeight:700,borderRadius:5,padding:"2px 7px"}}>↩ WITHDRAW</button>
+                      ) : (
+                        <button title="Delete this draft" onClick={async()=>{await vaultDelete(doc.id);setVault(prev=>prev.filter(d=>d.id!==doc.id));}} style={{background:"transparent",border:"none",color:C.muted,cursor:"pointer",fontSize:13}}>✕</button>
+                      )}
                     </div>
                     <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:6}}>{doc.title?.slice(0,70)}</div>
                     <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                      {onLedger&&<Pill color={C.gold} small>🔒 GRANTED · LEDGER</Pill>}
+                      {inQueue&&<Pill color={C.amber} small>⏳ IN GOV QUEUE{pend?.status?` · ${pend.status}`:""}</Pill>}
+                      {doc.status==="WITHDRAWN"&&<Pill color={C.muted} small>↩ WITHDRAWN</Pill>}
                       {doc.govCode&&<Pill color={C.gold} small>🏛 {doc.govCode}</Pill>}
                       {doc.ipfsCid&&<Pill color={C.cyan} small>IPFS ✓</Pill>}
                       {doc.tokenData?.stats&&<Pill color={C.accent} small>{doc.tokenData.stats.tokens} tokens</Pill>}
                     </div>
                     <div style={{fontSize:9,color:C.muted,marginTop:5,fontFamily:"monospace"}}>{new Date(doc.uploadedAt||doc.timestamp).toLocaleDateString()}</div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
