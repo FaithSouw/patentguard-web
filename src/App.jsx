@@ -621,7 +621,13 @@ function UploadPanel(){
     setStatus("processing"); setMsg("Generating ZK commitment...");
     try {
       // Extract real text (pdf.js for PDFs; direct read for text files).
-      const rawText = await extractFileText(file);
+      // Scanned/image PDFs have no text layer and fall back to OCR, which is
+      // slow — surface per-page progress so the user knows it's working.
+      const rawText = await extractFileText(file, {
+        onProgress: ({ stage, page, pages }) => {
+          if (stage === "ocr") setMsg(`Scanned PDF detected — running OCR (page ${page}/${pages})...`);
+        },
+      });
       if (!rawText || rawText.trim().length < 20) {
         throw new Error("Could not extract text from this file. For scanned/image PDFs, paste the text via the template editor instead.");
       }
