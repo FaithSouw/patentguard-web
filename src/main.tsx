@@ -1,10 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import Shell from './Shell';
+import { AuthProvider } from './lib/auth';
+import Root from './Root';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <Shell />
+    <AuthProvider>
+      <Root />
+    </AuthProvider>
   </React.StrictMode>
 );

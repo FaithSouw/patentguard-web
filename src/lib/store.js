@@ -9,10 +9,8 @@
 // Keys are of the form "<namespace>:<id>" and are routed to per-namespace
 // Supabase tables (each shaped { id text pk, data jsonb, updated_at }).
 // Unmapped keys (e.g. "notifications:index") go to the catch-all app_kv table.
-import { createClient } from "@supabase/supabase-js";
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Uses the single shared client (so it carries the logged-in user's JWT → RLS).
+import { supabase } from "./supabaseClient";
 
 const NS_TABLE = {
   vault: "user_vault",
@@ -32,19 +30,9 @@ function route(key) {
   return table ? { table, id: key.slice(i + 1) } : { table: "app_kv", id: key };
 }
 
-let supabase = null;
-if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-  try {
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: false },
-    });
-    // eslint-disable-next-line no-console
-    console.info("[store] Supabase backend active");
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn("[store] Supabase init failed, using local fallback:", e);
-    supabase = null;
-  }
+if (supabase) {
+  // eslint-disable-next-line no-console
+  console.info("[store] Supabase backend active");
 }
 
 export const supabaseEnabled = !!supabase;

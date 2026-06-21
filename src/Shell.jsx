@@ -2,13 +2,16 @@ import { useState, useEffect } from "react";
 import App from "./App";
 import GovPortal from "./GovPortal";
 import { store } from "./lib/store";
+import { useAuth } from "./lib/auth";
+import { TwoFactorPanel } from "./AuthScreen";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  PATENTGUARD — NAVIGATION SHELL
 //  Single entry point routing between User Portal and Government Portal
 // ══════════════════════════════════════════════════════════════════════════════
 
-const GOV_PIN = "1234"; // Change this to your preferred demo PIN
+// Government Portal access is now gated by the examiner role (Supabase Auth),
+// not a shared PIN.
 
 // ── Shared storage helpers ────────────────────────────────────────────────────
 async function getNotifications() {
@@ -62,22 +65,12 @@ function Spinner({ size = 14 }) {
 // ══════════════════════════════════════════════════════════════════════════════
 //  LOGIN / PORTAL SELECTOR
 // ══════════════════════════════════════════════════════════════════════════════
-function LoginScreen({ onSelect }) {
-  const [showGovPin, setShowGovPin] = useState(false);
-  const [pin,        setPin]        = useState("");
-  const [pinError,   setPinError]   = useState(false);
+function LoginScreen({ onSelect, isExaminer, user, role, onSignOut, onManage2FA }) {
+  const [showGovDenied, setShowGovDenied] = useState(false);
   const [hoveredUser,setHoveredUser]= useState(false);
   const [hoveredGov, setHoveredGov] = useState(false);
 
-  const submitPin = () => {
-    if (pin === GOV_PIN) {
-      setPinError(false);
-      onSelect("gov");
-    } else {
-      setPinError(true);
-      setPin("");
-    }
-  };
+  const handleGov = () => { isExaminer ? onSelect("gov") : setShowGovDenied(true); };
 
   return (
     <div style={{
@@ -109,6 +102,18 @@ function LoginScreen({ onSelect }) {
       <div style={{ position:"absolute", top:"20%", left:"15%", width:300, height:300, borderRadius:"50%", background:`${S.user}08`, filter:"blur(80px)", animation:"shell-float 6s ease infinite" }}/>
       <div style={{ position:"absolute", bottom:"20%", right:"15%", width:300, height:300, borderRadius:"50%", background:`${S.gov}08`, filter:"blur(80px)", animation:"shell-float 6s ease infinite 3s" }}/>
 
+      {/* Account bar */}
+      <div style={{ position:"absolute", top:16, right:16, display:"flex", alignItems:"center", gap:10, fontFamily:"'Space Mono',monospace", fontSize:11, zIndex:5 }}>
+        <span style={{ color:S.muted }}>{user?.email}</span>
+        <span style={{ padding:"2px 8px", borderRadius:20,
+          background:`${isExaminer?S.gov:S.user}22`, border:`1px solid ${isExaminer?S.gov:S.user}50`,
+          color:isExaminer?S.gov:S.user, fontWeight:700, letterSpacing:"0.06em" }}>
+          {(role||"applicant").toUpperCase()}
+        </span>
+        <button onClick={onManage2FA} style={{ padding:"4px 10px", borderRadius:6, background:S.dim, border:`1px solid ${S.border}`, color:S.text, fontFamily:"monospace", fontSize:11, cursor:"pointer" }}>🔐 2FA</button>
+        <button onClick={onSignOut} style={{ padding:"4px 10px", borderRadius:6, background:S.dim, border:`1px solid ${S.border}`, color:S.muted, fontFamily:"monospace", fontSize:11, cursor:"pointer" }}>Sign out</button>
+      </div>
+
       {/* Content */}
       <div style={{ position:"relative", textAlign:"center", animation:"shell-fade-in 0.6s ease forwards" }}>
 
@@ -127,7 +132,7 @@ function LoginScreen({ onSelect }) {
           SELECT YOUR PORTAL TO CONTINUE
         </div>
 
-        {!showGovPin ? (
+        {!showGovDenied ? (
           <div style={{ display:"flex", gap:20, justifyContent:"center", flexWrap:"wrap" }}>
 
             {/* USER PORTAL CARD */}
@@ -170,7 +175,7 @@ function LoginScreen({ onSelect }) {
 
             {/* GOVERNMENT PORTAL CARD */}
             <div
-              onClick={() => setShowGovPin(true)}
+              onClick={handleGov}
               onMouseOver={() => setHoveredGov(true)}
               onMouseOut={() => setHoveredGov(false)}
               style={{
@@ -207,64 +212,32 @@ function LoginScreen({ onSelect }) {
             </div>
           </div>
         ) : (
-          /* PIN ENTRY */
+          /* ACCESS DENIED — applicant trying to open the Government Portal */
           <div style={{ animation:"shell-fade-in 0.3s ease forwards" }}>
             <div style={{
               padding:"32px", borderRadius:16, background:S.panel,
-              border:`1px solid ${S.gov}50`, width:320, margin:"0 auto",
+              border:`1px solid ${S.gov}50`, width:340, margin:"0 auto",
               boxShadow:`0 12px 40px ${S.gov}20`,
             }}>
-              <div style={{ fontSize:32, marginBottom:12 }}>🔐</div>
-              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:800, color:S.gov, marginBottom:4 }}>
-                GOVERNMENT ACCESS
+              <div style={{ fontSize:32, marginBottom:12 }}>🏛</div>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:800, color:S.gov, marginBottom:8 }}>
+                EXAMINER ACCESS ONLY
               </div>
-              <div style={{ fontSize:11, color:S.muted, marginBottom:20, lineHeight:1.6 }}>
-                Enter your examiner PIN to access the USPTO Government Portal
+              <div style={{ fontSize:11, color:S.muted, marginBottom:20, lineHeight:1.7 }}>
+                The Government Portal requires a USPTO <b>examiner</b> account.
+                Your account role is <b style={{ color:S.user }}>{(role||"applicant").toUpperCase()}</b>.
+                Contact an administrator to be granted examiner access.
               </div>
-              <input
-                type="password" value={pin} onChange={e => setPin(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && submitPin()}
-                placeholder="Enter PIN..."
-                autoFocus
+              <button
+                onClick={() => setShowGovDenied(false)}
                 style={{
-                  width:"100%", padding:"12px", marginBottom:8,
-                  background:S.dim, border:`1px solid ${pinError?`${S.user}80`:S.border}`,
-                  borderRadius:8, color:S.text, fontFamily:"monospace", fontSize:16,
-                  textAlign:"center", letterSpacing:"0.3em",
+                  padding:"10px 16px", borderRadius:8,
+                  background:S.dim, border:`1px solid ${S.border}`,
+                  color:S.muted, fontFamily:"monospace", fontSize:12, cursor:"pointer",
                 }}
-              />
-              {pinError && (
-                <div style={{ fontSize:11, color:S.user, marginBottom:8 }}>
-                  ✗ Incorrect PIN. Try again.
-                </div>
-              )}
-              <div style={{ display:"flex", gap:8, marginTop:8 }}>
-                <button
-                  onClick={submitPin}
-                  style={{
-                    flex:1, padding:"10px", borderRadius:8,
-                    background:`${S.gov}22`, border:`1px solid ${S.gov}50`,
-                    color:S.gov, fontFamily:"monospace", fontSize:12, fontWeight:700,
-                    cursor:"pointer", letterSpacing:"0.08em",
-                  }}
-                >
-                  ENTER →
-                </button>
-                <button
-                  onClick={() => { setShowGovPin(false); setPin(""); setPinError(false); }}
-                  style={{
-                    padding:"10px 14px", borderRadius:8,
-                    background:S.dim, border:`1px solid ${S.border}`,
-                    color:S.muted, fontFamily:"monospace", fontSize:12,
-                    cursor:"pointer",
-                  }}
-                >
-                  ← BACK
-                </button>
-              </div>
-              <div style={{ fontSize:10, color:S.muted, marginTop:12 }}>
-                Demo PIN: <span style={{ color:S.gov, fontFamily:"monospace" }}>{GOV_PIN}</span>
-              </div>
+              >
+                ← BACK
+              </button>
             </div>
           </div>
         )}
@@ -346,7 +319,7 @@ function NotificationBell({ portal, notifications, onRead }) {
 // ══════════════════════════════════════════════════════════════════════════════
 //  PORTAL WRAPPER (top nav bar over each portal)
 // ══════════════════════════════════════════════════════════════════════════════
-function PortalWrapper({ portal, onSwitchRequest, notifications, onReadNotifications }) {
+function PortalWrapper({ portal, onSwitchRequest, notifications, onReadNotifications, onSignOut, onManage2FA }) {
   const isGov    = portal === "gov";
   const accentC  = isGov ? S.gov : S.user;
   const label    = isGov ? "GOVERNMENT PORTAL" : "USER PORTAL";
@@ -389,6 +362,27 @@ function PortalWrapper({ portal, onSwitchRequest, notifications, onReadNotificat
           >
             ⇄ SWITCH TO {switchTo}
           </button>
+          <button
+            onClick={onManage2FA}
+            title="Two-factor authentication"
+            style={{
+              background:S.dim, border:`1px solid ${S.border}`, color:S.text,
+              borderRadius:8, padding:"5px 10px", cursor:"pointer",
+              fontFamily:"monospace", fontSize:10, fontWeight:700,
+            }}
+          >
+            🔐 2FA
+          </button>
+          <button
+            onClick={onSignOut}
+            style={{
+              background:S.dim, border:`1px solid ${S.border}`, color:S.muted,
+              borderRadius:8, padding:"5px 10px", cursor:"pointer",
+              fontFamily:"monospace", fontSize:10, fontWeight:700, letterSpacing:"0.06em",
+            }}
+          >
+            SIGN OUT
+          </button>
         </div>
       </div>
 
@@ -403,19 +397,11 @@ function PortalWrapper({ portal, onSwitchRequest, notifications, onReadNotificat
 // ══════════════════════════════════════════════════════════════════════════════
 //  SWITCH CONFIRMATION MODAL
 // ══════════════════════════════════════════════════════════════════════════════
-function SwitchModal({ currentPortal, onConfirm, onCancel }) {
-  const [pin,      setPin]      = useState("");
-  const [pinError, setPinError] = useState(false);
+function SwitchModal({ currentPortal, onConfirm, onCancel, isExaminer }) {
   const switchingToGov = currentPortal === "user";
+  const denied = switchingToGov && !isExaminer;
 
-  const handleConfirm = () => {
-    if (switchingToGov) {
-      if (pin === GOV_PIN) { setPinError(false); onConfirm(); }
-      else { setPinError(true); setPin(""); }
-    } else {
-      onConfirm();
-    }
-  };
+  const handleConfirm = () => { if (!denied) onConfirm(); };
 
   return (
     <div style={{
@@ -437,31 +423,15 @@ function SwitchModal({ currentPortal, onConfirm, onCancel }) {
           SWITCH TO {switchingToGov ? "GOVERNMENT" : "USER"} PORTAL
         </div>
         <div style={{ fontSize:11, color:S.muted, textAlign:"center", marginBottom:20, lineHeight:1.6 }}>
-          {switchingToGov
-            ? "Government access requires PIN verification."
-            : "Return to the PatentGuard user interface."}
+          {denied
+            ? "The Government Portal requires an examiner account. Your role does not have access."
+            : switchingToGov
+              ? "Switch to the USPTO Government Portal."
+              : "Return to the PatentGuard user interface."}
         </div>
 
-        {switchingToGov && (
-          <>
-            <input
-              type="password" value={pin} onChange={e=>setPin(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&handleConfirm()}
-              placeholder="Examiner PIN..."
-              autoFocus
-              style={{
-                width:"100%", padding:"10px", marginBottom:6,
-                background:S.dim, border:`1px solid ${pinError?S.user+"80":S.border}`,
-                borderRadius:8, color:S.text, fontFamily:"monospace",
-                fontSize:16, textAlign:"center", letterSpacing:"0.3em", outline:"none",
-              }}
-            />
-            {pinError && <div style={{ fontSize:11, color:S.user, textAlign:"center", marginBottom:6 }}>✗ Incorrect PIN</div>}
-          </>
-        )}
-
         <div style={{ display:"flex", gap:8, marginTop:8 }}>
-          <button onClick={handleConfirm} style={{
+          {!denied && <button onClick={handleConfirm} style={{
             flex:1, padding:"10px", borderRadius:8,
             background:switchingToGov?`${S.gov}22`:`${S.user}22`,
             border:`1px solid ${switchingToGov?S.gov+"50":S.user+"50"}`,
@@ -469,7 +439,7 @@ function SwitchModal({ currentPortal, onConfirm, onCancel }) {
             fontSize:12, fontWeight:700, cursor:"pointer", letterSpacing:"0.08em",
           }}>
             CONFIRM →
-          </button>
+          </button>}
           <button onClick={onCancel} style={{
             padding:"10px 14px", borderRadius:8,
             background:S.dim, border:`1px solid ${S.border}`,
@@ -487,8 +457,10 @@ function SwitchModal({ currentPortal, onConfirm, onCancel }) {
 //  ROOT SHELL
 // ══════════════════════════════════════════════════════════════════════════════
 export default function Shell() {
+  const { isExaminer, user, role, signOut } = useAuth();
   const [portal,        setPortal]        = useState(null); // null | "user" | "gov"
   const [showSwitch,    setShowSwitch]    = useState(false);
+  const [show2fa,       setShow2fa]       = useState(false);
   const [notifications, setNotifications] = useState([]);
 
   // Poll notifications every 5 seconds
@@ -527,7 +499,19 @@ export default function Shell() {
     setNotifications(updated);
   };
 
-  if (!portal) return <LoginScreen onSelect={handleLogin}/>;
+  if (!portal) return (
+    <>
+      <LoginScreen
+        onSelect={handleLogin}
+        isExaminer={isExaminer}
+        user={user}
+        role={role}
+        onSignOut={signOut}
+        onManage2FA={() => setShow2fa(true)}
+      />
+      {show2fa && <TwoFactorPanel onClose={() => setShow2fa(false)} />}
+    </>
+  );
 
   return (
     <>
@@ -536,14 +520,18 @@ export default function Shell() {
         onSwitchRequest={() => setShowSwitch(true)}
         notifications={notifications}
         onReadNotifications={handleReadNotifications}
+        onSignOut={signOut}
+        onManage2FA={() => setShow2fa(true)}
       />
       {showSwitch && (
         <SwitchModal
           currentPortal={portal}
           onConfirm={handleSwitchConfirm}
           onCancel={() => setShowSwitch(false)}
+          isExaminer={isExaminer}
         />
       )}
+      {show2fa && <TwoFactorPanel onClose={() => setShow2fa(false)} />}
     </>
   );
 }
